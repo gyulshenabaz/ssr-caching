@@ -15,6 +15,11 @@ Once the installation process is complete, check the status of current docker co
 ```
 docker ps
 ```
+In order to start the application, run the following command:
+
+```
+yarn && yarn dev
+```
 
 ### Request caching pipeline
 1. Client requests a page from express.js server
