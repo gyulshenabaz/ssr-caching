@@ -10,17 +10,6 @@ export default function Post(props) {
   )
 }
 
-export async function getStaticProps({ params: { id } }) {
+export async function getInitialProps({ params: { id } }) {
   return { props: { id } }
-}
-
-export async function getStaticPaths() {
-  return {
-    paths: [
-      { params: { id: 'first' } },
-      { params: { id: 'second' } },
-      { params: { id: 'last' } },
-    ],
-    fallback: true,
-  }
 }
