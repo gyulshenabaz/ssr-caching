@@ -92,7 +92,7 @@ function isBot (userAgent) {
 
 const _getKey = ({ req }) => {
   const userAgent = req.header('user-agent');
-  const url = isBot(userAgent) ? `bot-${req.url}` : req.url;
+  const url = isBot(userAgent) ? `bot-${req.url}` : `user-${req.url}`;
 
   return url;
 }
