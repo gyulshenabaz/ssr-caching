@@ -15,9 +15,10 @@ const renderAndCache = redisResponse({
       res.end = (payload) => {
         resolve(res.statusCode === 200 && payload)
       }
-      app.renderToHTML(req, res, req.path, req.query);
+      app.render(req, res, req.path, req.query);
     })
     res.end = rawResEnd
+ 
     return { html }
   },
   send: ({ html, res }) => res.send(html),
@@ -25,6 +26,10 @@ const renderAndCache = redisResponse({
 
 app.prepare().then(() => {
   const server = express()
+
+  server.get('/_next/*', (req, res) => {
+    handle(req, res);
+  });
 
   server.get('/', (req, res) => renderAndCache({ req, res }))
 

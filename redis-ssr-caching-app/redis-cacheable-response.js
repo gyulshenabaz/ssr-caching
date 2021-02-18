@@ -2,6 +2,8 @@
 
 const prettyMs = require('pretty-ms')
 const getEtag = require('etag')
+const htmlParser = require('node-html-parser');
+
 const Redis = require("ioredis");
 const redis = new Redis();
 
@@ -15,6 +17,7 @@ const botUserAgents = [
   'facebot',
   'google page speed insights',
   'google-structured-html-testing-tool',
+  'gsa-crawler',
   'googlebot',
   'ia_archiver',
   'linkedinbot',
@@ -31,8 +34,48 @@ const botUserAgents = [
   'vkshare',
   'w3c_validator',
   'whatsapp',
-  'screaming frog'
+  'screaming frog',
+  'zoominfobot',
+  'ifttt',
+  'sogou',
+  'ru_bot',
+  'researchscan',
+  'nimbostratus-bot',
+  'slack-imgproxy',
+  'node-superagent'
 ];
+
+function modifyHtmlContent (htmlContent, userAgent) {
+  const parsedHtml = htmlParser.parse(htmlContent, {
+    script: true,
+    noscript: true,
+    style: true,
+    pre: true
+  });
+  
+  if (isBot(userAgent)) {
+    const body = parsedHtml.querySelector('body');
+    const head = parsedHtml.querySelector('head');
+  
+    const allScripts = body.querySelectorAll('script');
+    const allLinks = body.querySelectorAll('script');
+
+    const scriptsToBeRemoved = allScripts.filter(
+      s => s.rawAttrs.includes('development') ||
+      s.rawAttrs.includes('react-refresh') ||
+      s.rawAttrs.includes('polyfills'),
+    );
+
+    const allLinksToBeRemoved = allLinks.filter(
+      l => !l.rawAttrs.includes('canonical')
+    );
+    
+    scriptsToBeRemoved.map(s => body.removeChild(s))
+    allLinksToBeRemoved.map(l => head.removeChild(l))
+  }
+
+  return parsedHtml.toString();
+}
 
 function isEmpty (value) {
   return (
@@ -43,18 +86,20 @@ function isEmpty (value) {
   )
 }
 
+function isBot (userAgent) {
+  return botUserAgents.includes(userAgent);
+}
+
 const _getKey = ({ req }) => {
   const userAgent = req.header('user-agent');
-  const isBot = botUserAgents.includes(userAgent);
-  const url = isBot ? `bot-${req.url}` : req.url;
+  const url = isBot(userAgent) ? `bot-${req.url}` : req.url;
 
   return url;
 }
 
 const _getTtl = ({ req }) => {
   const userAgent = req.header('user-agent');
-  const isBot = botUserAgents.includes(userAgent);
-  const ttl = isBot ? 1728 * 1000 * 100 : 1000 * 60 * 20;
+  const ttl = isBot(userAgent) ? 1728 * 1000 * 100 : 1000 * 60 * 20;
 
   return ttl;
 }
@@ -119,7 +164,9 @@ module.exports = ({
       html,
     } = result
 
-    const etag = cachedEtag || getEtag(html)
+    const modifiedHtml = isCached ? html : modifyHtmlContent(html, req.header('user-agent'));
+   
+    const etag = cachedEtag || getEtag(modifiedHtml)
     const ifNoneMatch = req.headers['if-none-match']
     const isModified = etag !== ifNoneMatch
 
@@ -139,12 +186,13 @@ module.exports = ({
     }
 
     if (!isCached) {
-      const payload = { etag, createdAt, ttl, html }
-      
+      const payload = { etag, createdAt, ttl, html: modifiedHtml }
+
       await redis.hmset(key, payload);
       redis.expire(key, toSeconds(ttl))
     }
-    return send({ html, res, req })
+
+    return send({ html: modifiedHtml, res, req })
   }
 }
 
