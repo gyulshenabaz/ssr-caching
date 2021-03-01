@@ -51,16 +51,8 @@ const botUserAgents = [
   'node-superagent'
 ];
 
-async function insertAdjacentHTML(html, htmlContent) {
-  const p = htmlParser.parse(html, {
-    script: true,
-    noscript: true,
-    pre: true
-  });
-  
-  p.childNodes.forEach((n) => {
-    htmlContent.appendChild(n)
-  });
+async function insertAdjacentHTML(html, mainNode) {
+  mainNode.appendChild(html)
 }
 
 function modifyHtmlContent (htmlContent, isBot) {
