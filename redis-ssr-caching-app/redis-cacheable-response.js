@@ -80,50 +80,52 @@ function modifyHtmlContent (htmlContent, isBot) {
     scriptsToBeRemoved.map(s => body.removeChild(s))
     allLinksToBeRemoved.map(l => head.removeChild(l))
   }
-
-  const devScripts = allScripts.filter(
-    c =>
-      c.rawAttrs.includes('development') ||
-      c.rawAttrs.includes('react-refresh'),
-  );
-
-  const newScripts = `<script id="__preloader__">
-      function docReady(fn) {
-        // see if DOM is already available
-        if (document.readyState === "complete") {
-            // call on next available tick
-            setTimeout(fn, 1);
-        } else {
-            window.addEventListener("load", fn);
-        }
-      }
-      docReady(function () {
-        let body = document.querySelector('body');
-        let el;
-        ${allScripts.reduce((acc, s) => {
-          let attr;
-          let attrValue;
-          let curr;
-          const attrPairs = s.rawAttrs.split(' ');
-          curr = acc.concat(`\nel = document.createElement('script');`);
-          attrPairs.forEach(pair => {
-            const splitPair = pair.split(/=(.+)/);
-            attr = splitPair[0];
-            attrValue =
-              attr === 'async' || attr === 'nomodule' ? true : splitPair[1];
-            curr = curr.concat(`el["${attr}"] = ${attrValue};`);
-          });
-          return curr.concat(`body.appendChild(el);`);
-        }, '')}
-        setTimeout(() => document.querySelector('#__preloader__').remove(), 50)
-      });
-    </script>`;
-    parsedHtml.querySelector('body').insertAdjacentHTML(
-      'beforeend',
-      devScripts.toString(),
+  else {
+    const devScripts = allScripts.filter(
+      c =>
+        c.rawAttrs.includes('development') ||
+        c.rawAttrs.includes('react-refresh'),
     );
-    parsedHtml.querySelector('body').insertAdjacentHTML('beforeend', nextData);
-    parsedHtml.querySelector('body').insertAdjacentHTML('beforeend', newScripts);
+  
+    const newScripts = `<script id="__preloader__">
+        function docReady(fn) {
+          // see if DOM is already available
+          if (document.readyState === "complete") {
+              // call on next available tick
+              setTimeout(fn, 1);
+          } else {
+              window.addEventListener("load", fn);
+          }
+        }
+        docReady(function () {
+          let body = document.querySelector('body');
+          let el;
+          ${allScripts.reduce((acc, s) => {
+            let attr;
+            let attrValue;
+            let curr;
+            const attrPairs = s.rawAttrs.split(' ');
+            curr = acc.concat(`\nel = document.createElement('script');`);
+            attrPairs.forEach(pair => {
+              const splitPair = pair.split(/=(.+)/);
+              attr = splitPair[0];
+              attrValue =
+                attr === 'async' || attr === 'nomodule' ? true : splitPair[1];
+              curr = curr.concat(`el["${attr}"] = ${attrValue};`);
+            });
+            return curr.concat(`body.appendChild(el);`);
+          }, '')}
+          setTimeout(() => document.querySelector('#__preloader__').remove(), 50)
+        });
+      </script>`;
+      parsedHtml.querySelector('body').insertAdjacentHTML(
+        'beforeend',
+        devScripts.toString(),
+      );
+      parsedHtml.querySelector('body').insertAdjacentHTML('beforeend', nextData);
+      parsedHtml.querySelector('body').insertAdjacentHTML('beforeend', newScripts);
+  }
+  
 
   return parsedHtml.toString();
 }
