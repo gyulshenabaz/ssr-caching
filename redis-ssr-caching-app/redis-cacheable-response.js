@@ -1,11 +1,17 @@
 'use strict'
 
 const prettyMs = require('pretty-ms')
-const getEtag = require('etag')
 const htmlParser = require('node-html-parser');
 
 const Redis = require("ioredis");
-const redis = new Redis();
+const redis = new Redis({
+  port: process.env.REDIS_PORT,
+  host: process.env.REDIS_HOST
+});
+
+redis.on('error', err => {
+  console.log('REDIS: FAILED')
+})
 
 const botUserAgents = [
   'applebot',
@@ -45,7 +51,7 @@ const botUserAgents = [
   'node-superagent'
 ];
 
-function modifyHtmlContent (htmlContent, userAgent) {
+function modifyHtmlContent (htmlContent, isBot) {
   const parsedHtml = htmlParser.parse(htmlContent, {
     script: true,
     noscript: true,
@@ -53,17 +59,18 @@ function modifyHtmlContent (htmlContent, userAgent) {
     pre: true
   });
   
-  if (isBot(userAgent)) {
-    const body = parsedHtml.querySelector('body');
-    const head = parsedHtml.querySelector('head');
-  
-    const allScripts = body.querySelectorAll('script');
-    const allLinks = body.querySelectorAll('script');
+  const body = parsedHtml.querySelector('body');
+  const head = parsedHtml.querySelector('head');
+  const allScripts = body.querySelectorAll('script');
+
+  const nextData = body.querySelector('#__NEXT_DATA__');
+
+  if (isBot) {
+    
+    const allLinks = head.querySelectorAll('link');
 
     const scriptsToBeRemoved = allScripts.filter(
-      s => s.rawAttrs.includes('development') ||
-      s.rawAttrs.includes('react-refresh') ||
-      s.rawAttrs.includes('polyfills'),
+      s => s.getAttribute('type') !== 'application/json'
     );
 
     const allLinksToBeRemoved = allLinks.filter(
@@ -74,32 +81,67 @@ function modifyHtmlContent (htmlContent, userAgent) {
     allLinksToBeRemoved.map(l => head.removeChild(l))
   }
 
+  const devScripts = allScripts.filter(
+    c =>
+      c.rawAttrs.includes('development') ||
+      c.rawAttrs.includes('react-refresh'),
+  );
+
+  const newScripts = `<script id="__preloader__">
+      function docReady(fn) {
+        // see if DOM is already available
+        if (document.readyState === "complete") {
+            // call on next available tick
+            setTimeout(fn, 1);
+        } else {
+            window.addEventListener("load", fn);
+        }
+      }
+      docReady(function () {
+        let body = document.querySelector('body');
+        let el;
+        ${allScripts.reduce((acc, s) => {
+          let attr;
+          let attrValue;
+          let curr;
+          const attrPairs = s.rawAttrs.split(' ');
+          curr = acc.concat(`\nel = document.createElement('script');`);
+          attrPairs.forEach(pair => {
+            const splitPair = pair.split(/=(.+)/);
+            attr = splitPair[0];
+            attrValue =
+              attr === 'async' || attr === 'nomodule' ? true : splitPair[1];
+            curr = curr.concat(`el["${attr}"] = ${attrValue};`);
+          });
+          return curr.concat(`body.appendChild(el);`);
+        }, '')}
+        setTimeout(() => document.querySelector('#__preloader__').remove(), 50)
+      });
+    </script>`;
+    parsedHtml.querySelector('body').insertAdjacentHTML(
+      'beforeend',
+      devScripts.toString(),
+    );
+    parsedHtml.querySelector('body').insertAdjacentHTML('beforeend', nextData);
+    parsedHtml.querySelector('body').insertAdjacentHTML('beforeend', newScripts);
+
   return parsedHtml.toString();
 }
 
-function isEmpty (value) {
-  return (
-    value === undefined ||
-    value === null ||
-    (typeof value === 'object' && Object.keys(value).length === 0) ||
-    (typeof value === 'string' && value.trim().length === 0)
-  )
+function isUserAgentBot(req) {
+  return botUserAgents.includes(req.header('user-agent'));
 }
 
-function isBot (userAgent) {
-  return botUserAgents.includes(userAgent);
+const _getKey = (req, isBot) => {
+
+  const url = req.headers.host + req.url
+  const key = isBot ? `bot-${url}` : `user-${url}`;
+
+  return key;
 }
 
-const _getKey = ({ req }) => {
-  const userAgent = req.header('user-agent');
-  const url = isBot(userAgent) ? `bot-${req.url}` : `user-${req.url}`;
-
-  return url;
-}
-
-const _getTtl = ({ req }) => {
-  const userAgent = req.header('user-agent');
-  const ttl = isBot(userAgent) ? 1728 * 1000 * 100 : 1000 * 60 * 20;
+const _getTtl = (isBot) => {
+  const ttl = isBot ? 1728 * 1000 * 100 : 1000 * 60 * 20;
 
   return ttl;
 }
@@ -107,20 +149,16 @@ const _getTtl = ({ req }) => {
 const toSeconds = ms => Math.floor(ms / 1000)
 
 const createSetHeaders = ({ revalidate }) => {
-  return ({ res, createdAt, isCached, ttl, hasForce, etag }) => {
-    const diff = hasForce ? 0 : createdAt + ttl - Date.now()
-    const maxAge = toSeconds(diff)
+  return ({ res, isCached, ttl }) => {
+    const maxAge = toSeconds(ttl)
 
     res.setHeader(
       'Cache-Control',
-      `public, must-revalidate, max-age=${maxAge}, s-maxage=${maxAge}, stale-while-revalidate=${
-        hasForce ? 0 : toSeconds(revalidate(ttl))
-      }`
+      `public, must-revalidate, max-age=${maxAge}, s-maxage=${maxAge}, stale-while-revalidate=${toSeconds(revalidate(ttl))}`
     )
 
     res.setHeader('X-Cache-Status', isCached ? 'HIT' : 'MISS')
-    res.setHeader('X-Cache-Expired-At', prettyMs(diff))
-    res.setHeader('ETag', etag)
+    res.setHeader('X-Cache-Expired-At', prettyMs(ttl))
   }
 }
 
@@ -138,58 +176,31 @@ module.exports = ({
 
   return async opts => {
     const { req, res } = opts
-    const hasForce = Boolean(
-      req.query ? req.query.force : parse(req.url.split('?')[1]).force
-    )
-
-    const key = getKey(opts)
-    const ttl = getTtl(opts)
-
-    const cachedResult = await redis.hgetall(key)
     
-    const isCached = !hasForce && !isEmpty(cachedResult)
+    const isBot = isUserAgentBot(req);
+
+    const key = getKey(req, isBot)
+    const defaultTtl = getTtl(isBot)
+
+    const cachedResult = await redis.get(key)
+    
+    const isCached = cachedResult !== null
     const result = isCached ? cachedResult : await get(opts)
 
     if (!result) return
 
-    if (isCached) {
-      cachedResult.ttl = parseInt(cachedResult.ttl)
-      cachedResult.createdAt = parseInt(cachedResult.createdAt)
-    }
+    const ttl = isCached ? await redis.ttl(key) * 1000 : defaultTtl
 
-    const {
-      etag: cachedEtag,
-      ttl: defaultTtl = 7200000,
-      createdAt = Date.now(),
-      html,
-    } = result
-
-    const modifiedHtml = isCached ? html : modifyHtmlContent(html, req.header('user-agent'));
-   
-    const etag = cachedEtag || getEtag(modifiedHtml)
-    const ifNoneMatch = req.headers['if-none-match']
-    const isModified = etag !== ifNoneMatch
-
+    const modifiedHtml = isCached ? result : modifyHtmlContent(result.html, isBot);
+    
     setHeaders({
-      etag,
       res,
-      createdAt,
       isCached,
-      ttl,
-      hasForce
+      ttl
     })
 
-    if (!isModified) {
-      res.statusCode = 304
-      res.end()
-      return
-    }
-
     if (!isCached) {
-      const payload = { etag, createdAt, ttl, html: modifiedHtml }
-
-      await redis.hmset(key, payload);
-      redis.expire(key, toSeconds(ttl))
+      await redis.set(key, modifiedHtml, "PX", ttl);
     }
 
     return send({ html: modifiedHtml, res, req })
