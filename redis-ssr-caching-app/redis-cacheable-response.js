@@ -125,11 +125,8 @@ function modifyHtmlContent (htmlContent, isBot) {
           setTimeout(() => document.querySelector('#__preloader__').remove(), 50)
         });
       </script>`;
-      parsedHtml.querySelector('body').insertAdjacentHTML(
-        'beforeend',
-        devScripts.toString(),
-      );
-
+     
+      insertAdjacentHTML(devScripts, body)
       insertAdjacentHTML(nextData, body)
       insertAdjacentHTML(newScripts, body)
   }
