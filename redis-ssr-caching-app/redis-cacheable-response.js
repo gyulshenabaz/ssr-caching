@@ -51,6 +51,18 @@ const botUserAgents = [
   'node-superagent'
 ];
 
+async function insertAdjacentHTML(html, htmlContent) {
+  const p = htmlParser.parse(html, {
+    script: true,
+    noscript: true,
+    pre: true
+  });
+  
+  p.childNodes.forEach((n) => {
+    htmlContent.appendChild(n)
+  });
+}
+
 function modifyHtmlContent (htmlContent, isBot) {
   const parsedHtml = htmlParser.parse(htmlContent, {
     script: true,
@@ -81,6 +93,7 @@ function modifyHtmlContent (htmlContent, isBot) {
     allLinksToBeRemoved.map(l => head.removeChild(l))
   }
   else {
+
     allScripts.map(s => body.removeChild(s))
 
     const devScripts = allScripts.filter(
@@ -124,8 +137,9 @@ function modifyHtmlContent (htmlContent, isBot) {
         'beforeend',
         devScripts.toString(),
       );
-      parsedHtml.querySelector('body').insertAdjacentHTML('beforeend', nextData);
-      parsedHtml.querySelector('body').insertAdjacentHTML('beforeend', newScripts);
+
+      insertAdjacentHTML(nextData, body)
+      insertAdjacentHTML(newScripts, body)
   }
 
   return parsedHtml.toString();
