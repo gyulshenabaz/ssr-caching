@@ -81,6 +81,8 @@ function modifyHtmlContent (htmlContent, isBot) {
     allLinksToBeRemoved.map(l => head.removeChild(l))
   }
   else {
+    allScripts.map(s => body.removeChild(s))
+
     const devScripts = allScripts.filter(
       c =>
         c.rawAttrs.includes('development') ||
@@ -125,7 +127,6 @@ function modifyHtmlContent (htmlContent, isBot) {
       parsedHtml.querySelector('body').insertAdjacentHTML('beforeend', nextData);
       parsedHtml.querySelector('body').insertAdjacentHTML('beforeend', newScripts);
   }
-  
 
   return parsedHtml.toString();
 }
