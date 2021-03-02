@@ -51,9 +51,7 @@ const botUserAgents = [
   'node-superagent'
 ];
 
-async function insertAdjacentHTML(html, mainNode) {
-  mainNode.appendChild(html)
-}
+var botRegex = new RegExp('(' + botUserAgents.join('|') + ')', 'ig');
 
 function modifyHtmlContent (htmlContent, isBot) {
   const parsedHtml = htmlParser.parse(htmlContent, {
@@ -62,15 +60,12 @@ function modifyHtmlContent (htmlContent, isBot) {
     style: true,
     pre: true
   });
-  
+
   const body = parsedHtml.querySelector('body');
-  const head = parsedHtml.querySelector('head');
   const allScripts = body.querySelectorAll('script');
 
-  const nextData = body.querySelector('#__NEXT_DATA__');
-
   if (isBot) {
-    
+    const head = parsedHtml.querySelector('head');
     const allLinks = head.querySelectorAll('link');
 
     const scriptsToBeRemoved = allScripts.filter(
@@ -85,15 +80,9 @@ function modifyHtmlContent (htmlContent, isBot) {
     allLinksToBeRemoved.map(l => head.removeChild(l))
   }
   else {
-
     allScripts.map(s => body.removeChild(s))
 
-    const devScripts = allScripts.filter(
-      c =>
-        c.rawAttrs.includes('development') ||
-        c.rawAttrs.includes('react-refresh'),
-    );
-  
+    const customScript = htmlParser.parse('<script></script>')
     const newScripts = `<script id="__preloader__">
         function docReady(fn) {
           // see if DOM is already available
@@ -126,30 +115,26 @@ function modifyHtmlContent (htmlContent, isBot) {
         });
       </script>`;
      
-      insertAdjacentHTML(devScripts, body)
-      insertAdjacentHTML(nextData, body)
-      insertAdjacentHTML(newScripts, body)
+      customScript.textContent = newScripts
+      body.appendChild(allScripts)
+      body.appendChild(customScript)
   }
 
   return parsedHtml.toString();
 }
 
 function isUserAgentBot(req) {
-  return botUserAgents.includes(req.header('user-agent'));
+  botRegex.lastIndex = 0;
+	return botRegex.test(req.header('user-agent')?.toLowerCase());
 }
 
 const _getKey = (req, isBot) => {
-
   const url = req.headers.host + req.url
-  const key = isBot ? `bot-${url}` : `user-${url}`;
-
-  return key;
+  return isBot ? `bot-${url}` : `user-${url}`;
 }
 
 const _getTtl = (isBot) => {
-  const ttl = isBot ? 1728 * 1000 * 100 : 1000 * 60 * 20;
-
-  return ttl;
+  return isBot ? 1728 * 1000 * 100 : 1000 * 60 * 20;
 }
 
 const toSeconds = ms => Math.floor(ms / 1000)
@@ -187,11 +172,9 @@ module.exports = ({
 
     const key = getKey(req, isBot)
     const defaultTtl = getTtl(isBot)
-
-    const cachedResult = await redis.get(key)
-    
-    const isCached = cachedResult !== null
-    const result = isCached ? cachedResult : await get(opts)
+  
+    const isCached = await redis.exists(key)
+    const result = isCached ? await redis.get(key) : await get(opts)
 
     if (!result) return
 
