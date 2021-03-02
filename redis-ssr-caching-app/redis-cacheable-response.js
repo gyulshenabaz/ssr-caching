@@ -2,6 +2,9 @@
 
 const prettyMs = require('pretty-ms')
 const htmlParser = require('node-html-parser');
+const HTMLElement = require('node-html-parser').default;
+const TextNode = require('node-html-parser').default;
+
 
 const Redis = require("ioredis");
 const redis = new Redis({
@@ -82,7 +85,8 @@ function modifyHtmlContent (htmlContent, isBot) {
   else {
     allScripts.map(s => body.removeChild(s))
 
-    const customScript = htmlParser.parse('<script></script>')
+    const customScript = new HTMLElement('', {}, '')
+
     const newScripts = `<script id="__preloader__">
         function docReady(fn) {
           // see if DOM is already available
@@ -115,7 +119,7 @@ function modifyHtmlContent (htmlContent, isBot) {
         });
       </script>`;
      
-      customScript.textContent = newScripts
+      customScript.appendChild(new TextNode(newScripts))
       body.appendChild(allScripts)
       body.appendChild(customScript)
   }
