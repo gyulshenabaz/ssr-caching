@@ -9,16 +9,21 @@ const app = next({ dev })
 const handle = app.getRequestHandler()
 
 const renderAndCache = redisResponse({
-    get: async ({ req, res }) => {
+    get: async ({req, res}) => {
     const rawResEnd = res.end
     const html = await new Promise((resolve) => {
       res.end = (payload) => {
-        resolve(res.statusCode === 200 && payload)
+        resolve(payload)
       }
       app.render(req, res, req.path, req.query);
     })
     res.end = rawResEnd
  
+    if (res.statusCode != 200) {
+      res.send(html)
+      return;
+    }
+
     return { html }
   },
   send: ({ html, res }) => res.send(html),
@@ -31,13 +36,9 @@ app.prepare().then(() => {
     handle(req, res);
   });
 
-  server.get('/', (req, res) => renderAndCache({ req, res }))
-
-  server.get('/blog/:id', (req, res) => {
-    return renderAndCache({ req, res })
-  })
-
-  server.get('*', (req, res) => handle(req, res))
+  server.get('*', (req, res) => {
+    return renderAndCache({req, res});
+  });
 
   server.listen(port, (err) => {
     if (err) throw err
