@@ -9,24 +9,24 @@ const app = next({ dev })
 const handle = app.getRequestHandler()
 
 const renderAndCache = redisResponse({
-    get: async ({req, res}) => {
-    const rawResEnd = res.end
-    const html = await new Promise((resolve) => {
-      res.end = (payload) => {
-        resolve(payload)
-      }
-      app.render(req, res, req.path, req.query);
-    })
-    res.end = rawResEnd
- 
-    if (res.statusCode != 200) {
-      res.send(html)
-      return;
+  get: async ({req, res}) => {
+  const rawResEnd = res.end
+  const html = await new Promise((resolve) => {
+    res.end = (payload) => {
+      resolve(payload)
     }
+    app.render(req, res, req.path, req.query);
+  })
+  res.end = rawResEnd
 
-    return { html }
-  },
-  send: ({ html, res }) => res.send(html),
+  if (res.statusCode != 200) {
+    res.send(html)
+    return;
+  }
+
+  return { html }
+},
+send: ({ html, res }) => res.send(html),
 })
 
 app.prepare().then(() => {
